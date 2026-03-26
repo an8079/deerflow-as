@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+backend/__pycache__/
+backend/.venv/
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+# (none - commit everything useful)

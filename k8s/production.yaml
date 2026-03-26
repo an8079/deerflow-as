@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deer-flow-api
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: deer-flow-api
+  template:
+    spec:
+      containers:
+      - name: api
+        image: ghcr.io/deerflow-x/deer-flow-x:latest
+        ports: [{containerPort: 8000}]
+        resources:
+          requests: {memory: "512Mi", cpu: "250m"}
+          limits: {memory: "2Gi", cpu: "1000m"}
+        livenessProbe:
+          httpGet: {path: /health, port: 8000}
+          initialDelaySeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deer-flow-api-svc
+spec:
+  selector: {app: deer-flow-api}
+  ports: [{port: 80, targetPort: 8000}]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: deer-flow-api-hpa
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: deer-flow-api}
+  minReplicas: 2; maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target: {type: Utilization, averageUtilization: 70}

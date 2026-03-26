@@ -1,0 +1,124 @@
+# ============================================================
+# DeerFlow-X docker-compose.yml
+# Backend (FastAPI) + PostgreSQL 15 + Redis 7
+# ============================================================
+
+services:
+  # ---------- Backend API ----------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deerflow-backend
+    restart: unless-stopped
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-deerflow}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-deerflow}
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      # Supabase
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_KEY: ${SUPABASE_KEY}
+      # LLM
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    env_file:
+      - .env
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - deerflow-net
+    volumes:
+      - ./backend:/app:ro
+
+  # ---------- Frontend (nginx) ----------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: deerflow-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - deerflow-net
+    profiles:
+      - with-frontend
+
+  # ---------- PostgreSQL 15 ----------
+  db:
+    image: postgres:15-alpine
+    container_name: deerflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-deerflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-deerflow}
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Init scripts (e.g. extensions)
+      # - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deerflow} -d ${POSTGRES_DB:-deerflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - deerflow-net
+
+  # ---------- Redis 7 ----------
+  redis:
+    image: redis:7-alpine
+    container_name: deerflow-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+    env_file:
+      - .env
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - deerflow-net
+
+# ============================================================
+# Volumes — 持久化存储
+# ============================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ============================================================
+# Network
+# ============================================================
+networks:
+  deerflow-net:
+    driver: bridge
